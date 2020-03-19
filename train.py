@@ -41,12 +41,10 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
 
     start_time = time.time()
 
-    for name, p in net.named_parameters():
-        print(name, p.size(), p.device)
-
     for step, (images, labels) in enumerate(dataloader):
         images = images.to(device)
         labels = labels.to(device)
+        net = net.to(device)
         outputs = net(images)
         top1, top5 = get_accuracy(outputs, labels)
         loss = loss_func(outputs, labels)
@@ -118,9 +116,7 @@ def main():
         net = resnet_quant.resnet18(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit)
     if args.device == 'cuda':
         net = nn.DataParallel(net)
-    net = net.to('cuda:0')
-    for name, p in net.named_parameters():
-            print(name, p.size(), p.device)
+    net = net.to(args.device)
     optimizer = torch.optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 
     history = []
