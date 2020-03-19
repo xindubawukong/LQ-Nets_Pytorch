@@ -62,14 +62,16 @@ class VGG(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
 
-def make_layers(cfg, batch_norm=False):
+def make_layers(cfg, batch_norm=False, **kwargs):
     layers = []
     in_channels = 3
     for v in cfg:
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
         else:
-            conv2d = QuantConv2d(nbit=3, in_channels=in_channels, out_channels=v, kernel_size=3, padding=1)
+            w_bit = kwargs['w_bit']
+            a_bit = kwargs['a_bit']
+            conv2d = QuantConv2d(w_bit=w_bit, a_bit=a_bit, in_channels=in_channels, out_channels=v, kernel_size=3, padding=1)
             if batch_norm:
                 layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
             else:
@@ -89,7 +91,7 @@ cfgs = {
 def _vgg(arch, cfg, batch_norm, pretrained, progress, **kwargs):
     if pretrained:
         kwargs['init_weights'] = False
-    model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), **kwargs)
+    model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm, **kwargs))
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)

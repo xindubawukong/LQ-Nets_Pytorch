@@ -3,7 +3,7 @@ import argparse
 import time
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 from dataset import get_dataset
 from utils import *
@@ -67,7 +67,8 @@ def main():
     parser.add_argument('--seed', type=int, help='random seed', default=0)
     parser.add_argument('--batch_size', type=int, help='batch size', default=64)
     parser.add_argument('--dataset', type=str, help='cifar10 or imagenet', default='cifar10')
-    parser.add_argument('--quant_k', type=int, default=0)
+    parser.add_argument('--w_bit', type=int, default=0)
+    parser.add_argument('--a_bit', type=int, default=0)
     args = parser.parse_args()
     print('args:', args)
 
@@ -83,15 +84,16 @@ def main():
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
-    net = vgg_quant.vgg11_bn(pretrained=False, num_classes=10).to(args.device)
+    net = vgg_quant.vgg11_bn(pretrained=False, num_classes=10, w_bit=args.w_bit, a_bit=args.a_bit)
+    net = net.to(args.device)
     optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.2)
 
     history = []
     for epoch in range(args.max_epoch):
-        lr_scheduler.step()
         train_result = inference(epoch, net, train_dataloader, optimizer, args.device, is_train=True)
         test_result = inference(epoch, net, test_dataloader, optimizer, args.device, is_train=False)
+        lr_scheduler.step()
         print('train_result: top1: {}  top5: {}  loss: {}'.format(*train_result))
         print('test_result: top1: {}  top5: {}  loss: {}'.format(*test_result))
         history.append({

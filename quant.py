@@ -6,15 +6,13 @@ import numpy as np
 NORM_PPF_0_75 = 0.6745
 
 
-class QuantConv2d(nn.Conv2d):
+class WeightQuantizer(object):
 
-    def __init__(self, nbit, **kwargs):
-        super().__init__(**kwargs)
-        self.weight.org = self.weight.data.clone()
+    def __init__(self, nbit, num_filters):
         self.nbit = nbit
-        num_filters = self.out_channels
+        self.num_filters = num_filters
         init_basis = []
-        n = self.kernel_size[0] * self.kernel_size[1] * self.out_channels
+        n = num_filters
         base = NORM_PPF_0_75 * ((2. / n) ** 0.5) / (2 ** (nbit - 1))
         for i in range(num_filters):
             t = [(2 ** j) * base for j in range(nbit)]
@@ -47,22 +45,13 @@ class QuantConv2d(nn.Conv2d):
         # print('level_multiplier:', self.level_multiplier)
         # print('thrs_multiplier:', self.thrs_multiplier)
     
-    def forward(self, x):
-        if self.nbit > 0:
-            self.weight.data = self.QuantWeight(self.weight.data)
-        else:
-            # nbit == 0, do not quantize weight
-            pass
-        y = nn.functional.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        return y
-    
-    def QuantWeight(self, x):
+    def quant(self, x, training=False):
         if x.is_cuda:
             self.basis = self.basis.cuda()
             self.level_multiplier = self.level_multiplier.cuda()
             self.thrs_multiplier = self.thrs_multiplier.cuda()
         nbit = self.nbit
-        num_filters = self.out_channels
+        num_filters = self.num_filters
         num_levels = 2 ** self.nbit
 
         levels = torch.mm(self.basis, self.level_multiplier.t())
@@ -85,7 +74,7 @@ class QuantConv2d(nn.Conv2d):
             y = torch.where(gt, levels[:, i + 1].view(-1, 1, 1, 1).expand_as(y), y)
             tt = gt.unsqueeze(4).expand(list(x.size()) + [nbit])
             bits_y = torch.where(tt, level_codes_channelwise[:, i + 1].view(num_filters, 1, 1, 1, nbit).expand_as(bits_y), bits_y)
-        if self.training:
+        if training:
             # bits_y: num_filters * in_channel * kernel_size * kernel_size * nbit
             BT = bits_y.view(num_filters, -1, nbit)
             B = BT.transpose(1, 2)
@@ -94,25 +83,37 @@ class QuantConv2d(nn.Conv2d):
             if x.is_cuda:
                 eps = eps.cuda()
             BxBT += eps
-            # print(BxBT)
-            try:
-                BxBT_inv = torch.inverse(BxBT)
-            except RuntimeError:
-                print(num_filters)
-                print(BxBT)
-                torch.save(BxBT, 'temp.pth')
-                exit(0)
+            BxBT_inv = torch.inverse(BxBT)
             BxX = torch.bmm(B, x.view(num_filters, -1, 1))
             new_basis = torch.bmm(BxBT_inv, BxX)
             self.basis = new_basis.view(num_filters, nbit)
         return y
 
 
+class QuantConv2d(nn.Conv2d):
+
+    def __init__(self, w_bit, a_bit, **kwargs):
+        super().__init__(**kwargs)
+        self.weight.org = self.weight.data.clone()
+        self.w_bit = w_bit
+        self.a_bit = a_bit
+        self.weight_quantizer = WeightQuantizer(w_bit, self.out_channels)
+    
+    def forward(self, x):
+        if self.w_bit > 0:
+            self.weight.data = self.weight_quantizer.quant(self.weight.data, training=self.training)
+        else:
+            # nbit == 0, do not quantize weight
+            pass
+        y = nn.functional.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        return y
+
+
 if __name__ == '__main__':
     torch.manual_seed(0)
-    l = QuantConv2d(nbit=3, in_channels=3, out_channels=4, kernel_size=2)
+    l = QuantConv2d(w_bit=3, a_bit=0, in_channels=3, out_channels=4, kernel_size=2)
     print(l)
-    print(l.basis)
+    print(l.weight_quantizer.basis)
     print(l.weight)
     l.train()
     x = torch.randn(1, 3, 7, 7)
@@ -120,5 +121,5 @@ if __name__ == '__main__':
         l(x)
         l.weight.data = l.weight.org.clone()
     
-    print(l.basis)
+    print(l.weight_quantizer.basis)
     print(l.weight)
