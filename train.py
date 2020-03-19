@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import argparse
 import time
 import os
@@ -13,15 +14,16 @@ import resnet
 import resnet_quant
 
 
-def adjust_learning_rate(optimizer, epoch, args):
-    if epoch < 10:
-        lr = args.lr
-    elif epoch < 20:
-        lr = args.lr * 0.2
-    else:
-        lr = args.lr * 0.2 * 0.2
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+lr_count = 0
+
+
+def adjust_learning_rate(optimizer, history):
+    if len(history) > 3 and history[-1]['test_result'][0] < min([history[i - 4]['test_result'][0] for i in range(3)]):
+        if lr_count <= 3:
+            lr_count += 1
+            lr = optimizer.param_groups[0]['lr'] * 0.1
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr
 
 
 def inference(epoch, net, dataloader, optimizer, device, is_train=False):
@@ -76,20 +78,21 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cpu')
-    parser.add_argument('--gpu_id', type=int, help='gpu id', default=0)
+    parser.add_argument('--gpu', type=str, help='comma separated list of GPU(s) to use.')
+    parser.add_argument('--model', type=str, help='vgg or resnet', default='vgg')
+    parser.add_argument('--dataset', type=str, help='cifar10 or imagenet', default='cifar10')
     parser.add_argument('--max_epoch', type=int, help='max epochs', default=10)
     parser.add_argument('--seed', type=int, help='random seed', default=0)
     parser.add_argument('--batch_size', type=int, help='batch size', default=64)
-    parser.add_argument('--dataset', type=str, help='cifar10 or imagenet', default='cifar10')
     parser.add_argument('--w_bit', type=int, help='weight quant bits', default=0)
     parser.add_argument('--a_bit', type=int, help='activation quant bits', default=0)
-    parser.add_argument('--lr', type=float, help='init learning rate', default=0.001)
+    parser.add_argument('--lr', type=float, help='init learning rate', default=0.01)
     args = parser.parse_args()
     print('args:', args)
 
     assert args.device in ['cpu', 'cuda']
-    if args.device == 'cuda':
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
+    if args.device == 'cuda' and args.gpu:
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     torch.manual_seed(args.seed)
 
     if not os.path.exists('log'):
@@ -100,16 +103,17 @@ def main():
     train_dataset, test_dataset = get_dataset(args.dataset)
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=2)
-
-    net = vgg_quant.vgg11_bn(pretrained=False, num_classes=10, w_bit=args.w_bit, a_bit=args.a_bit)
-    # net = resnet_quant.resnet18(pretrained=False, num_classes=1000, w_bit=args.w_bit, a_bit=args.a_bit)
-    print(net)
+    num_classes = 10 if args.dataset == 'cifar10' else 1000
+    if args.model == 'vgg':
+        net = vgg_quant.vgg11_bn(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit)
+    else:
+        net = resnet_quant.resnet18(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit)
     net = net.to(args.device)
     optimizer = torch.optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 
     history = []
     for epoch in range(args.max_epoch):
-        adjust_learning_rate(optimizer, epoch, args)
+        adjust_learning_rate(optimizer, history)
         train_result = inference(epoch, net, train_dataloader, optimizer, args.device, is_train=True)
         with torch.no_grad():
             test_result = inference(epoch, net, test_dataloader, optimizer, args.device, is_train=False)
