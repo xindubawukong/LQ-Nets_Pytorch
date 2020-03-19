@@ -19,7 +19,8 @@ lr_count = 0
 
 def adjust_learning_rate(optimizer, history):
     if len(history) > 3 and history[-1]['test_result'][0] < min([history[i - 4]['test_result'][0] for i in range(3)]):
-        if lr_count <= 3:
+        global lr_count
+        if lr_count < 3:
             lr_count += 1
             lr = optimizer.param_groups[0]['lr'] * 0.1
             for param_group in optimizer.param_groups:
@@ -40,10 +41,12 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
 
     start_time = time.time()
 
+    for name, p in net.named_parameters():
+        print(name, p.size(), p.device)
+
     for step, (images, labels) in enumerate(dataloader):
         images = images.to(device)
         labels = labels.to(device)
-        
         outputs = net(images)
         top1, top5 = get_accuracy(outputs, labels)
         loss = loss_func(outputs, labels)
@@ -62,6 +65,11 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
             for p in list(net.parameters()):
                 if hasattr(p,'org'):
                     p.org.copy_(p.data)
+            for m in net.modules():
+                if hasattr(m, 'record'):
+                    if len(m.record) > 0:
+                        m.basis.data = torch.cat(m.record).mean(dim=0).view(m.num_filters, m.nbit)
+                        m.record = []
         
         if step > 0 and step % disp_interval  == 0:
             duration = float(time.time() - start_time)
@@ -108,7 +116,11 @@ def main():
         net = vgg_quant.vgg11_bn(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit)
     else:
         net = resnet_quant.resnet18(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit)
-    net = net.to(args.device)
+    if args.device == 'cuda':
+        net = nn.DataParallel(net)
+    net = net.to('cuda:0')
+    for name, p in net.named_parameters():
+            print(name, p.size(), p.device)
     optimizer = torch.optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 
     history = []
