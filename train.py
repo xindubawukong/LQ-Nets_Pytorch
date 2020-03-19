@@ -52,7 +52,7 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
             duration = float(time.time() - start_time)
             example_per_second = images.size(0) * disp_interval / duration
             lr = optimizer.param_groups[0]['lr']
-            print("epoch:[%.3d]  step: %d  top1: %f  top5: %f  loss: %.6f  fps: %.3f  lr: %.5f " %
+            print("epoch:[%.3d]  step: %d  top1: %f  top5: %f  loss: %.6f  fps: %.3f  lr: %.6f " %
                   (epoch, step, top1_avg.avg, top5_avg.avg, loss.item(), example_per_second, lr)
             )
             start_time = time.time()
@@ -89,7 +89,7 @@ def main():
 
     net = vgg_quant.vgg11_bn(pretrained=False, num_classes=10, w_bit=args.w_bit, a_bit=args.a_bit)
     net = net.to(args.device)
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+    optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.2)
 
     history = []

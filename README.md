@@ -23,7 +23,10 @@ All models are trained from scratch.
 |Network|Weight Bits|Activation Bits|Top-1 Accuracy|Top-5 Accuracy|
 |:---:|:---:|:---:|:---:|:---:|
 |vgg11_bn|32|32|86.77|99.21|
-|vgg11_bn|3|32|84.72|99.17|
+|vgg11_bn|1|32|84.1|99.05|
+|vgg11_bn|2|32|86.25|99.13|
+|vgg11_bn|3|32|86.48|99.39|
+|vgg11_bn|4|32|86.88|99.29|
 
 ## References
 

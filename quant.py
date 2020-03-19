@@ -126,24 +126,42 @@ class QuantConv2d(nn.Conv2d):
         self.activation_quantizer = ActivationQuantizer(a_bit)
     
     def forward(self, x):
-        x = self.activation_quantizer.quant(x)
-        self.weight.data = self.weight_quantizer.quant(self.weight.data, training=self.training)
+        if (self.in_channels > 3):
+            x = self.activation_quantizer.quant(x, training=self.training)
+            self.weight.data = self.weight_quantizer.quant(self.weight.data, training=self.training)
         y = nn.functional.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y
 
 
 if __name__ == '__main__':
     torch.manual_seed(0)
-    l = QuantConv2d(w_bit=2, a_bit=3, in_channels=3, out_channels=1, kernel_size=2)
-    print(l)
-    if hasattr(l.weight_quantizer, 'basis'):
-        print(l.weight_quantizer.basis)
-    print(l.weight)
-    l.train()
-    x = torch.randn(5, 3, 7, 7)
+    # l = QuantConv2d(w_bit=2, a_bit=3, in_channels=3, out_channels=1, kernel_size=2)
+    # print(l)
+    # if hasattr(l.weight_quantizer, 'basis'):
+    #     print(l.weight_quantizer.basis)
+    # print(l.weight)
+    # l.train()
+    # x = torch.randn(5, 3, 7, 7)
+    # x.requires_grad = True
+    # y = l(x)
+    # print(y.size())
+    # loss = y.mean()
+    # loss.backward()
+    # print(x.grad)
+
+    aa = ActivationQuantizer(3)
+
+    x = torch.randn(5, 5)
     x.requires_grad = True
-    y = l(x)
-    print(y.size())
-    loss = y.mean()
-    loss.backward()
+    print(x)
+    y = aa.quant(x, True)
+    print(y)
+    y.backward(torch.ones(y.size()))
+    print(x.grad)
+    
+    for i in range(10):
+        y = aa.quant(x, True)
+    y = aa.quant(x, True)
+    print(y)
+    y.backward(y)
     print(x.grad)
