@@ -7,7 +7,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 from dataset import get_dataset
 from utils import *
-from vgg import *
+import vgg
+import vgg_quant
 
 
 def inference(epoch, net, dataloader, optimizer, device, is_train=False):
@@ -15,7 +16,7 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
         net.train()
     else:
         net.eval()
-    disp_interval = 50
+    disp_interval = 10
     loss_func = torch.nn.CrossEntropyLoss()
 
     loss_avg = AverageMeter()
@@ -39,7 +40,13 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
         if is_train:
             optimizer.zero_grad()
             loss.backward()
+            for p in list(net.parameters()):
+                if hasattr(p,'org'):
+                    p.data.copy_(p.org)
             optimizer.step()
+            for p in list(net.parameters()):
+                if hasattr(p,'org'):
+                    p.org.copy_(p.data)
         
         if step > 0 and step % disp_interval  == 0:
             duration = float(time.time() - start_time)
@@ -60,6 +67,7 @@ def main():
     parser.add_argument('--seed', type=int, help='random seed', default=0)
     parser.add_argument('--batch_size', type=int, help='batch size', default=64)
     parser.add_argument('--dataset', type=str, help='cifar10 or imagenet', default='cifar10')
+    parser.add_argument('--quant_k', type=int, default=0)
     args = parser.parse_args()
     print('args:', args)
 
@@ -75,7 +83,7 @@ def main():
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
-    net = vgg11_bn(pretrained=True, num_classes=1000).to(args.device)
+    net = vgg_quant.vgg11_bn(pretrained=False, num_classes=10).to(args.device)
     optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.2)
 
@@ -94,6 +102,7 @@ def main():
         info = {
             'history': history,
             'state_dict': net.state_dict(),
+            'args': args,
         }
         torch.save(info, os.path.join(log_path, f'epoch_{epoch}.pth'))
     
