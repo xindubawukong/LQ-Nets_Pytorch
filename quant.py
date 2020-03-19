@@ -10,9 +10,11 @@ class WeightQuantizer(object):
 
     def __init__(self, nbit, num_filters):
         self.nbit = nbit
+        if self.nbit == 0:
+            return
         self.num_filters = num_filters
         init_basis = []
-        n = num_filters
+        n = num_filters * 3 * 3
         base = NORM_PPF_0_75 * ((2. / n) ** 0.5) / (2 ** (nbit - 1))
         for i in range(num_filters):
             t = [(2 ** j) * base for j in range(nbit)]
@@ -46,6 +48,8 @@ class WeightQuantizer(object):
         # print('thrs_multiplier:', self.thrs_multiplier)
     
     def quant(self, x, training=False):
+        if self.nbit == 0:
+            return x
         if x.is_cuda:
             self.basis = self.basis.cuda()
             self.level_multiplier = self.level_multiplier.cuda()
@@ -90,36 +94,52 @@ class WeightQuantizer(object):
         return y
 
 
+class ActivationQuantizer(object):
+
+    def __init__(self, nbit):
+        self.nbit = nbit
+        if self.nbit == 0:
+            return
+        self.weight_quantizer = WeightQuantizer(nbit, num_filters=1)
+    
+    def quant(self, x, training=False):
+        if self.nbit == 0:
+            return x
+        t = x.view(1, x.size(0), x.size(1), -1)
+        y = self.weight_quantizer.quant(t, training)
+        y = y.view_as(x)
+        return x + x.detach() * -1 + y.detach()
+
+
 class QuantConv2d(nn.Conv2d):
 
-    def __init__(self, w_bit, a_bit, **kwargs):
+    def __init__(self, w_bit=0, a_bit=0, **kwargs):
         super().__init__(**kwargs)
         self.weight.org = self.weight.data.clone()
         self.w_bit = w_bit
         self.a_bit = a_bit
         self.weight_quantizer = WeightQuantizer(w_bit, self.out_channels)
+        self.activation_quantizer = ActivationQuantizer(a_bit)
     
     def forward(self, x):
-        if self.w_bit > 0:
-            self.weight.data = self.weight_quantizer.quant(self.weight.data, training=self.training)
-        else:
-            # nbit == 0, do not quantize weight
-            pass
+        x = self.activation_quantizer.quant(x)
+        self.weight.data = self.weight_quantizer.quant(self.weight.data, training=self.training)
         y = nn.functional.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y
 
 
 if __name__ == '__main__':
     torch.manual_seed(0)
-    l = QuantConv2d(w_bit=3, a_bit=0, in_channels=3, out_channels=4, kernel_size=2)
+    l = QuantConv2d(w_bit=0, a_bit=3, in_channels=3, out_channels=1, kernel_size=2)
     print(l)
-    print(l.weight_quantizer.basis)
+    if hasattr(l.weight_quantizer, 'basis'):
+        print(l.weight_quantizer.basis)
     print(l.weight)
     l.train()
-    x = torch.randn(1, 3, 7, 7)
-    for i in range(100):
-        l(x)
-        l.weight.data = l.weight.org.clone()
-    
-    print(l.weight_quantizer.basis)
-    print(l.weight)
+    x = torch.randn(5, 3, 7, 7)
+    x.requires_grad = True
+    y = l(x)
+    print(y.size())
+    loss = y.mean()
+    loss.backward()
+    print(x.grad)
