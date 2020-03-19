@@ -3,7 +3,7 @@ import argparse
 import time
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+# os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 from dataset import get_dataset
 from utils import *
@@ -63,16 +63,19 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cpu')
+    parser.add_argument('--gpu_id', type=int, help='gpu id', default=0)
     parser.add_argument('--max_epoch', type=int, help='max epochs', default=10)
     parser.add_argument('--seed', type=int, help='random seed', default=0)
     parser.add_argument('--batch_size', type=int, help='batch size', default=64)
     parser.add_argument('--dataset', type=str, help='cifar10 or imagenet', default='cifar10')
-    parser.add_argument('--w_bit', type=int, default=0)
-    parser.add_argument('--a_bit', type=int, default=0)
+    parser.add_argument('--w_bit', type=int, help='weight quant bits', default=0)
+    parser.add_argument('--a_bit', type=int, help='activation quant bits', default=0)
     args = parser.parse_args()
     print('args:', args)
 
     assert args.device in ['cpu', 'cuda']
+    if args.device == 'cuda':
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
     torch.manual_seed(args.seed)
 
     if not os.path.exists('log'):
@@ -108,7 +111,7 @@ def main():
         }
         torch.save(info, os.path.join(log_path, f'epoch_{epoch}.pth'))
     
-    print('Bye~')
+    print(f'All results saved to {log_path}.\nBye~')
 
 
 if __name__ == '__main__':
