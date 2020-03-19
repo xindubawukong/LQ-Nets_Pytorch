@@ -62,6 +62,9 @@ class WeightQuantizer(object):
         levels, sort_id = torch.topk(levels, k=num_levels, dim=1, largest=False)
         # print('levels:', levels)
         thrs = torch.mm(levels, self.thrs_multiplier.t())
+
+        reshape_x = x.view(num_filters, -1)
+
         level_codes_channelwise = torch.zeros(num_filters, num_levels, nbit)
         if x.is_cuda:
             level_codes_channelwise = level_codes_channelwise.cuda()
@@ -69,15 +72,15 @@ class WeightQuantizer(object):
             eq = (sort_id == i).unsqueeze(2).expand(num_filters, num_levels, nbit)
             level_codes_channelwise = torch.where(eq, self.level_multiplier[i].view(-1).expand_as(level_codes_channelwise), level_codes_channelwise)
         # print(level_codes_channelwise.size(), level_codes_channelwise[0][0], level_codes_channelwise[0][1])
-        y = torch.zeros_like(x) + levels[:, 0].view(-1, 1, 1, 1)
-        bits_y = torch.zeros(list(x.size()) + [nbit]) - 1
+        y = torch.zeros_like(reshape_x) + levels[:, 0].view(-1, 1)
+        bits_y = torch.zeros(list(reshape_x.size()) + [nbit]) - 1
         if x.is_cuda:
             bits_y = bits_y.cuda()
         for i in range(num_levels - 1):
-            gt = x >= thrs[:, i].view(-1, 1, 1, 1)
-            y = torch.where(gt, levels[:, i + 1].view(-1, 1, 1, 1).expand_as(y), y)
-            tt = gt.unsqueeze(4).expand(list(x.size()) + [nbit])
-            bits_y = torch.where(tt, level_codes_channelwise[:, i + 1].view(num_filters, 1, 1, 1, nbit).expand_as(bits_y), bits_y)
+            gt = reshape_x >= thrs[:, i].view(-1, 1)
+            y = torch.where(gt, levels[:, i + 1].view(-1, 1).expand_as(y), y)
+            tt = gt.unsqueeze(2).expand(list(reshape_x.size()) + [nbit])
+            bits_y = torch.where(tt, level_codes_channelwise[:, i + 1].view(num_filters, 1, nbit).expand_as(bits_y), bits_y)
         if training:
             # bits_y: num_filters * in_channel * kernel_size * kernel_size * nbit
             BT = bits_y.view(num_filters, -1, nbit)
@@ -91,6 +94,7 @@ class WeightQuantizer(object):
             BxX = torch.bmm(B, x.view(num_filters, -1, 1))
             new_basis = torch.bmm(BxBT_inv, BxX)
             self.basis = new_basis.view(num_filters, nbit)
+        y = y.view_as(x)
         return y
 
 
@@ -105,7 +109,7 @@ class ActivationQuantizer(object):
     def quant(self, x, training=False):
         if self.nbit == 0:
             return x
-        t = x.view(1, x.size(0), x.size(1), -1)
+        t = x.view(1, -1)
         y = self.weight_quantizer.quant(t, training)
         y = y.view_as(x)
         return x + x.detach() * -1 + y.detach()
@@ -130,7 +134,7 @@ class QuantConv2d(nn.Conv2d):
 
 if __name__ == '__main__':
     torch.manual_seed(0)
-    l = QuantConv2d(w_bit=0, a_bit=3, in_channels=3, out_channels=1, kernel_size=2)
+    l = QuantConv2d(w_bit=2, a_bit=3, in_channels=3, out_channels=1, kernel_size=2)
     print(l)
     if hasattr(l.weight_quantizer, 'basis'):
         print(l.weight_quantizer.basis)
