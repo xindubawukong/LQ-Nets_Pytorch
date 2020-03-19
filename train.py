@@ -9,6 +9,19 @@ from dataset import get_dataset
 from utils import *
 import vgg
 import vgg_quant
+import resnet
+import resnet_quant
+
+
+def adjust_learning_rate(optimizer, epoch, args):
+    if epoch < 10:
+        lr = args.lr
+    elif epoch < 20:
+        lr = args.lr * 0.2
+    else:
+        lr = args.lr * 0.2 * 0.2
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
 
 def inference(epoch, net, dataloader, optimizer, device, is_train=False):
@@ -70,6 +83,7 @@ def main():
     parser.add_argument('--dataset', type=str, help='cifar10 or imagenet', default='cifar10')
     parser.add_argument('--w_bit', type=int, help='weight quant bits', default=0)
     parser.add_argument('--a_bit', type=int, help='activation quant bits', default=0)
+    parser.add_argument('--lr', type=float, help='init learning rate', default=0.001)
     args = parser.parse_args()
     print('args:', args)
 
@@ -83,20 +97,22 @@ def main():
     log_path = os.path.join('log', f'{time.strftime("%Y%m%d%H%M%S", time.localtime())}')
     os.mkdir(log_path)
 
-    train_dataset, test_dataset = get_dataset('cifar10')
+    train_dataset, test_dataset = get_dataset(args.dataset)
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
     net = vgg_quant.vgg11_bn(pretrained=False, num_classes=10, w_bit=args.w_bit, a_bit=args.a_bit)
+    # net = resnet_quant.resnet18(pretrained=False, num_classes=1000, w_bit=args.w_bit, a_bit=args.a_bit)
+    print(net)
     net = net.to(args.device)
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-4)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.2)
+    optimizer = torch.optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 
     history = []
     for epoch in range(args.max_epoch):
+        adjust_learning_rate(optimizer, epoch, args)
         train_result = inference(epoch, net, train_dataloader, optimizer, args.device, is_train=True)
-        test_result = inference(epoch, net, test_dataloader, optimizer, args.device, is_train=False)
-        lr_scheduler.step()
+        with torch.no_grad():
+            test_result = inference(epoch, net, test_dataloader, optimizer, args.device, is_train=False)
         print('train_result: top1: {}  top5: {}  loss: {}'.format(*train_result))
         print('test_result: top1: {}  top5: {}  loss: {}'.format(*test_result))
         history.append({
