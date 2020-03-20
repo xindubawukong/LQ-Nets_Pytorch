@@ -14,14 +14,16 @@ import resnet
 import resnet_quant
 
 
-lr_count = 0
-
-
 def adjust_learning_rate(optimizer, history):
+    if not hasattr(adjust_learning_rate, 'lr_count'):
+        adjust_learning_rate.lr_count = 0
+    if not hasattr(adjust_learning_rate, 'last_time'):
+        adjust_learning_rate.last_time = 0
     if len(history) > 3 and history[-1]['test_result'][0] < min([history[i - 4]['test_result'][0] for i in range(3)]):
-        global lr_count
-        if lr_count < 3:
-            lr_count += 1
+        if adjust_learning_rate.lr_count < 3 and adjust_learning_rate.last_time + 5 <= history[-1]['epoch']:
+            print('Bring down learning rate.')
+            adjust_learning_rate.lr_count += 1
+            adjust_learning_rate.last_time = history[-1]['epoch']
             lr = optimizer.param_groups[0]['lr'] * 0.1
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
@@ -66,7 +68,9 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
             for m in net.modules():
                 if hasattr(m, 'record'):
                     if len(m.record) > 0:
-                        m.basis.data = torch.cat(m.record).mean(dim=0).view(m.num_filters, m.nbit)
+                        new_basis = torch.cat(m.record).mean(dim=0).view(m.num_filters, m.nbit)
+                        new_basis = new_basis.to(m.basis.device)
+                        m.basis.data = m.basis.data * 0.5 + new_basis.data * 0.5
                         m.record = []
         
         if step > 0 and step % disp_interval  == 0:
@@ -131,6 +135,7 @@ def main():
             'epoch': epoch,
             'train_result': train_result,
             'test_result': test_result,
+            'lr': optimizer.param_groups[0]['lr'],
         })
         info = {
             'history': history,
@@ -138,6 +143,10 @@ def main():
             'args': args,
         }
         torch.save(info, os.path.join(log_path, f'epoch_{epoch}.pth'))
+        with open(os.path.join(log_path, 'aaa.txt'), 'w') as f:
+            f.write(f'args: {args}\n')
+            for t in history:
+                f.write(str(t) + '\n')
     
     print(f'All results saved to {log_path}.\nBye~')
 

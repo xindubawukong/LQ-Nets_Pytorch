@@ -19,7 +19,6 @@ class WeightQuantizer(nn.Module):
         base = NORM_PPF_0_75 * ((2. / n) ** 0.5) / (2 ** (nbit - 1))
         for i in range(num_filters):
             t = [(2 ** j) * base for j in range(nbit)]
-            t.reverse()  # test
             init_basis.append(t)
         self.basis = nn.Parameter(torch.Tensor(init_basis), requires_grad=False)
         # print('basis:', self.basis)
@@ -89,7 +88,7 @@ class WeightQuantizer(nn.Module):
             new_basis = torch.bmm(BxBT_inv, BxX)
             self.record.append(new_basis.view(num_filters, nbit).unsqueeze(0))
         y = y.view_as(x)
-        return y
+        return y.detach() + x + x.detach() * -1, [levels.min(), levels.max()]
 
 
 class ActivationQuantizer(nn.Module):
@@ -105,9 +104,10 @@ class ActivationQuantizer(nn.Module):
         if self.nbit == 0:
             return x
         t = x.view(1, -1)
-        y = self.weight_quantizer(t, training)
+        y, l = self.weight_quantizer(t, training)
         y = y.view_as(x)
-        return x + x.detach() * -1 + y.detach()
+        t = torch.clamp(x, l[0], l[1])
+        return y.detach() + t + t.detach() * -1
 
 
 class QuantConv2d(nn.Conv2d):
@@ -123,7 +123,7 @@ class QuantConv2d(nn.Conv2d):
     def forward(self, x):
         if (self.in_channels > 3):
             x = self.activation_quantizer(x, training=self.training)
-            self.weight.data = self.weight_quantizer(self.weight.data, training=self.training)
+            self.weight.data, _ = self.weight_quantizer(self.weight.data, training=self.training)
         y = nn.functional.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y
 

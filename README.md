@@ -29,6 +29,9 @@ All models are trained from scratch.
 |vgg11_bn|2|32|86.25|99.13|
 |vgg11_bn|3|32|86.48|99.39|
 |vgg11_bn|4|32|86.88|99.29|
+|vgg11_bn|2|2|76.97|98.36|
+|vgg11_bn|3|3|85.25|99.34|
+|vgg11_bn|4|4|85.81|99.26|
 
 ## References
 
