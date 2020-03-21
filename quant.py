@@ -16,7 +16,7 @@ class WeightQuantizer(nn.Module):
         self.num_filters = num_filters
         self.method = method
         init_basis = []
-        n = num_filters * 3 * 3
+        n = num_filters * 3 * 3 if num_filters > 1 else 2
         base = NORM_PPF_0_75 * ((2. / n) ** 0.5) / (2 ** (nbit - 1))
         for i in range(num_filters):
             t = [(2 ** j) * base for j in range(nbit)]
@@ -51,7 +51,6 @@ class WeightQuantizer(nn.Module):
         # print('level_multiplier:', self.level_multiplier)
         # print('thrs_multiplier:', self.thrs_multiplier)
         self.level_codes_channelwise = nn.Parameter(torch.zeros(num_filters, num_levels, nbit), requires_grad=False)
-        self.eps = nn.Parameter(torch.eye(nbit) * 0.01, requires_grad=False)
         self.record = []
     
     def forward(self, x, training=False):
@@ -88,12 +87,15 @@ class WeightQuantizer(nn.Module):
             BT = bits_y.view(num_filters, -1, nbit)
             B = BT.transpose(1, 2)
             BxBT = torch.bmm(B, BT)
-            BxBT += self.eps
-            BxBT_inv = torch.inverse(BxBT)
-            BxX = torch.bmm(B, x.view(num_filters, -1, 1))
-            new_basis = torch.bmm(BxBT_inv, BxX)
-            new_basis = torch.topk(new_basis, k=nbit, dim=1, largest=False)[0]
-            self.record.append(new_basis.view(num_filters, nbit).unsqueeze(0))
+            try:
+                BxBT_inv = torch.inverse(BxBT)
+            except RuntimeError:
+                pass
+            else:
+                BxX = torch.bmm(B, x.view(num_filters, -1, 1))
+                new_basis = torch.bmm(BxBT_inv, BxX)
+                new_basis = torch.topk(new_basis, k=nbit, dim=1, largest=False)[0]
+                self.record.append(new_basis.view(num_filters, nbit).unsqueeze(0))
         y = y.view_as(x)
         if num_filters > 1:
             return y + x + x.detach() * -1

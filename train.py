@@ -20,11 +20,11 @@ def adjust_learning_rate(optimizer, history):
     if not hasattr(adjust_learning_rate, 'last_time'):
         adjust_learning_rate.last_time = 0
     if len(history) > 3 and history[-1]['test_result'][0] < min([history[i - 4]['test_result'][0] for i in range(3)]):
-        if adjust_learning_rate.lr_count < 3 and adjust_learning_rate.last_time + 5 <= history[-1]['epoch']:
+        if adjust_learning_rate.lr_count < 2 and adjust_learning_rate.last_time + 5 <= history[-1]['epoch']:
             print('Bring down learning rate.')
             adjust_learning_rate.lr_count += 1
             adjust_learning_rate.last_time = history[-1]['epoch']
-            lr = optimizer.param_groups[0]['lr'] * 0.1
+            lr = optimizer.param_groups[0]['lr'] * 0.2
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
 
@@ -64,14 +64,14 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
                     if len(m.record) > 0:
                         new_basis = torch.cat(m.record).mean(dim=0).view(m.num_filters, m.nbit)
                         new_basis = new_basis.to(m.basis.device)
-                        m.basis.data = m.basis.data * 0.9 + new_basis.data * 0.1
+                        m.basis.data = m.basis.data * 0.5 + new_basis.data * 0.5
                         m.record = []
         
         if step > 0 and step % disp_interval  == 0:
             duration = float(time.time() - start_time)
             example_per_second = images.size(0) * disp_interval / duration
             lr = optimizer.param_groups[0]['lr']
-            print("epoch:[%.3d]  step: %d  top1: %f  top5: %f  loss: %.6f  fps: %.3f  lr: %.6f " %
+            print("epoch[%.3d]  step: %d  top1: %f  top5: %f  loss: %.6f  fps: %.3f  lr: %.6f " %
                   (epoch, step, top1_avg.avg, top5_avg.avg, loss.item(), example_per_second, lr)
             )
             start_time = time.time()
@@ -101,6 +101,8 @@ def main():
     torch.manual_seed(args.seed)
 
     assert args.method in ['QEM', 'BP']
+    assert args.w_bit <= 4
+    assert args.a_bit <= 4
 
     if not os.path.exists('log'):
         os.mkdir('log')
