@@ -95,7 +95,11 @@ class WeightQuantizer(nn.Module):
             new_basis = torch.topk(new_basis, k=nbit, dim=1, largest=False)[0]
             self.record.append(new_basis.view(num_filters, nbit).unsqueeze(0))
         y = y.view_as(x)
-        return y + x + x.detach() * -1, [levels.min().item(), levels.max().item()]
+        if num_filters > 1:
+            return y + x + x.detach() * -1
+        else:
+            t = torch.clamp(x, levels.min().item(), levels.max().item())
+            return y + t + t.detach() * -1
 
 
 class ActivationQuantizer(nn.Module):
@@ -111,10 +115,9 @@ class ActivationQuantizer(nn.Module):
         if self.nbit == 0:
             return x
         t = x.view(1, -1)
-        y, l = self.weight_quantizer(t, training)
+        y = self.weight_quantizer(t, training)
         y = y.view_as(x)
-        t = torch.clamp(x, l[0], l[1])
-        return y.detach() + t + t.detach() * -1
+        return y
 
 
 class QuantConv2d(nn.Conv2d):
@@ -129,7 +132,7 @@ class QuantConv2d(nn.Conv2d):
     def forward(self, x):
         if (self.in_channels > 3):
             x = self.activation_quantizer(x, training=self.training)
-            new_weight, _ = self.weight_quantizer(self.weight, training=self.training)
+            new_weight = self.weight_quantizer(self.weight, training=self.training)
         else:
             new_weight = self.weight
         y = nn.functional.conv2d(x, new_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
