@@ -58,13 +58,7 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
         if is_train:
             optimizer.zero_grad()
             loss.backward()
-            for p in list(net.parameters()):
-                if hasattr(p,'org'):
-                    p.data.copy_(p.org)
             optimizer.step()
-            for p in list(net.parameters()):
-                if hasattr(p,'org'):
-                    p.org.copy_(p.data)
             for m in net.modules():
                 if hasattr(m, 'record'):
                     if len(m.record) > 0:

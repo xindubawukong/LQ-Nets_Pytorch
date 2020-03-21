@@ -95,7 +95,7 @@ class WeightQuantizer(nn.Module):
             new_basis = torch.topk(new_basis, k=nbit, dim=1, largest=False)[0]
             self.record.append(new_basis.view(num_filters, nbit).unsqueeze(0))
         y = y.view_as(x)
-        return y.detach() + x + x.detach() * -1, [levels.min().item(), levels.max().item()]
+        return y + x + x.detach() * -1, [levels.min().item(), levels.max().item()]
 
 
 class ActivationQuantizer(nn.Module):
@@ -121,7 +121,6 @@ class QuantConv2d(nn.Conv2d):
 
     def __init__(self, w_bit=0, a_bit=0, method='QEM', **kwargs):
         super().__init__(**kwargs)
-        self.weight.org = self.weight.data.clone()
         self.w_bit = w_bit
         self.a_bit = a_bit
         self.weight_quantizer = WeightQuantizer(w_bit, self.out_channels, method=method)
@@ -130,40 +129,20 @@ class QuantConv2d(nn.Conv2d):
     def forward(self, x):
         if (self.in_channels > 3):
             x = self.activation_quantizer(x, training=self.training)
-            self.weight.data, _ = self.weight_quantizer(self.weight.data, training=self.training)
-        y = nn.functional.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            new_weight, _ = self.weight_quantizer(self.weight, training=self.training)
+        else:
+            new_weight = self.weight.data
+        y = nn.functional.conv2d(x, new_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y
 
 
 if __name__ == '__main__':
     torch.manual_seed(0)
-    # l = QuantConv2d(w_bit=2, a_bit=3, in_channels=3, out_channels=1, kernel_size=2)
-    # print(l)
-    # if hasattr(l.weight_quantizer, 'basis'):
-    #     print(l.weight_quantizer.basis)
-    # print(l.weight)
-    # l.train()
-    # x = torch.randn(5, 3, 7, 7)
-    # x.requires_grad = True
-    # y = l(x)
-    # print(y.size())
-    # loss = y.mean()
-    # loss.backward()
-    # print(x.grad)
 
-    aa = ActivationQuantizer(3)
-
-    x = torch.randn(5, 5)
-    x.requires_grad = True
-    print(x)
-    y = aa.quant(x, True)
-    print(y)
-    y.backward(torch.ones(y.size()))
-    print(x.grad)
-    
-    for i in range(10):
-        y = aa.quant(x, True)
-    y = aa.quant(x, True)
-    print(y)
-    y.backward(y)
-    print(x.grad)
+    l = QuantConv2d(w_bit=3, a_bit=0, method='BP', in_channels=4, out_channels=3, kernel_size=1)
+    x = torch.randn(1, 4, 3, 3)
+    y = l(x)
+    loss = y.sum()
+    loss.backward()
+    print(l.weight_quantizer.basis.grad)
+    print(l.weight.grad)
