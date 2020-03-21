@@ -25,9 +25,7 @@ class WeightQuantizer(nn.Module):
             self.basis = nn.Parameter(torch.Tensor(init_basis), requires_grad=False)
         else:
             self.basis = nn.Parameter(torch.Tensor(init_basis), requires_grad=True)
-        # print('basis:', self.basis)
         num_levels = 2 ** nbit
-        # initialize level multiplier
         init_level_multiplier = []
         for i in range(num_levels):
             level_multiplier_i = [0. for j in range(nbit)]
@@ -40,7 +38,6 @@ class WeightQuantizer(nn.Module):
                 level_number = level_number // 2
             init_level_multiplier.append(level_multiplier_i)
         self.level_multiplier = nn.Parameter(torch.Tensor(init_level_multiplier), requires_grad=False)
-        # initialize threshold multiplier
         init_thrs_multiplier = []
         for i in range(1, num_levels):
             thrs_multiplier_i = [0. for j in range(num_levels)]
@@ -48,9 +45,8 @@ class WeightQuantizer(nn.Module):
             thrs_multiplier_i[i] = 0.5
             init_thrs_multiplier.append(thrs_multiplier_i)
         self.thrs_multiplier = nn.Parameter(torch.Tensor(init_thrs_multiplier), requires_grad=False)
-        # print('level_multiplier:', self.level_multiplier)
-        # print('thrs_multiplier:', self.thrs_multiplier)
         self.level_codes_channelwise = nn.Parameter(torch.zeros(num_filters, num_levels, nbit), requires_grad=False)
+        self.eps = nn.Parameter(torch.eye(nbit), requires_grad=False)
         self.record = []
     
     def forward(self, x, training=False):
@@ -64,7 +60,6 @@ class WeightQuantizer(nn.Module):
 
         levels = torch.mm(self.basis, self.level_multiplier.t())
         levels, sort_id = torch.topk(levels, k=num_levels, dim=1, largest=False)
-        # print('levels:', levels)
         thrs = torch.mm(levels, self.thrs_multiplier.t())
 
         reshape_x = x.view(num_filters, -1)
@@ -73,7 +68,6 @@ class WeightQuantizer(nn.Module):
         for i in range(num_levels):
             eq = (sort_id == i).unsqueeze(2).expand(num_filters, num_levels, nbit)
             level_codes_channelwise = torch.where(eq, self.level_multiplier[i].view(-1).expand_as(level_codes_channelwise), level_codes_channelwise)
-        # print(level_codes_channelwise.size(), level_codes_channelwise[0][0], level_codes_channelwise[0][1])
         y = torch.zeros_like(reshape_x) + levels[:, 0].view(-1, 1)
         bits_y = reshape_x.clone().unsqueeze(2).expand(num_filters, reshape_x.size(1), nbit)
         bits_y = bits_y * 0 - 1
@@ -83,14 +77,14 @@ class WeightQuantizer(nn.Module):
             tt = gt.unsqueeze(2).expand(list(reshape_x.size()) + [nbit])
             bits_y = torch.where(tt, level_codes_channelwise[:, i + 1].view(num_filters, 1, nbit).expand_as(bits_y), bits_y)
         if training and self.method == 'QEM':
-            # bits_y: num_filters * in_channel * kernel_size * kernel_size * nbit
             BT = bits_y.view(num_filters, -1, nbit)
             B = BT.transpose(1, 2)
             BxBT = torch.bmm(B, BT)
             try:
                 BxBT_inv = torch.inverse(BxBT)
             except RuntimeError:
-                pass
+                BxBT += self.eps
+                BxBT_inv = torch.inverse(BxBT)
             else:
                 BxX = torch.bmm(B, x.view(num_filters, -1, 1))
                 new_basis = torch.bmm(BxBT_inv, BxX)
@@ -143,7 +137,6 @@ class QuantConv2d(nn.Conv2d):
 
 if __name__ == '__main__':
     torch.manual_seed(0)
-
     l = QuantConv2d(w_bit=3, a_bit=0, method='BP', in_channels=4, out_channels=3, kernel_size=1)
     x = torch.randn(1, 4, 3, 3)
     y = l(x)
