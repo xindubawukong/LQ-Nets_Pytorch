@@ -70,7 +70,7 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
                     if len(m.record) > 0:
                         new_basis = torch.cat(m.record).mean(dim=0).view(m.num_filters, m.nbit)
                         new_basis = new_basis.to(m.basis.device)
-                        m.basis.data = m.basis.data * 0.5 + new_basis.data * 0.5
+                        m.basis.data = m.basis.data * 0.9 + new_basis.data * 0.1
                         m.record = []
         
         if step > 0 and step % disp_interval  == 0:
@@ -96,6 +96,7 @@ def main():
     parser.add_argument('--batch_size', type=int, help='batch size', default=64)
     parser.add_argument('--w_bit', type=int, help='weight quant bits', default=0)
     parser.add_argument('--a_bit', type=int, help='activation quant bits', default=0)
+    parser.add_argument('--method', type=str, help='QEM or BP', default='QEM')
     parser.add_argument('--lr', type=float, help='init learning rate', default=0.01)
     args = parser.parse_args()
     print('args:', args)
@@ -104,6 +105,8 @@ def main():
     if args.device == 'cuda' and args.gpu:
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     torch.manual_seed(args.seed)
+
+    assert args.method in ['QEM', 'BP']
 
     if not os.path.exists('log'):
         os.mkdir('log')
@@ -115,9 +118,9 @@ def main():
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=2)
     num_classes = 10 if args.dataset == 'cifar10' else 1000
     if args.model == 'vgg':
-        net = vgg_quant.vgg11_bn(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit)
+        net = vgg_quant.vgg11_bn(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit, method=args.method)
     else:
-        net = resnet_quant.resnet18(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit)
+        net = resnet_quant.resnet18(pretrained=False, num_classes=num_classes, w_bit=args.w_bit, a_bit=args.a_bit, method=args.method)
     if args.device == 'cuda':
         net = nn.DataParallel(net)
     net = net.to(args.device)

@@ -71,7 +71,8 @@ def make_layers(cfg, batch_norm=False, **kwargs):
         else:
             w_bit = kwargs['w_bit']
             a_bit = kwargs['a_bit']
-            conv2d = QuantConv2d(w_bit=w_bit, a_bit=a_bit, in_channels=in_channels, out_channels=v, kernel_size=3, padding=1)
+            method = kwargs['method']
+            conv2d = QuantConv2d(w_bit=w_bit, a_bit=a_bit, method=method, in_channels=in_channels, out_channels=v, kernel_size=3, padding=1)
             if batch_norm:
                 layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
             else:

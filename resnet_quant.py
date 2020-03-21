@@ -24,18 +24,19 @@ model_urls = {
 
 resnet_w_bit = 0
 resnet_a_bit = 0
+resnet_method = 'QEM'
 
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """3x3 convolution with padding"""
-    return QuantConv2d(w_bit=resnet_w_bit, a_bit=resnet_a_bit,
+    return QuantConv2d(w_bit=resnet_w_bit, a_bit=resnet_a_bit, method=resnet_method,
                        in_channels=in_planes, out_channels=out_planes, kernel_size=3, stride=stride,
                        padding=dilation, groups=groups, bias=False, dilation=dilation)
 
 
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
-    return QuantConv2d(w_bit=resnet_w_bit, a_bit=resnet_a_bit,
+    return QuantConv2d(w_bit=resnet_w_bit, a_bit=resnet_a_bit, method=resnet_method,
                        in_channels=in_planes, out_channels=out_planes, kernel_size=1, stride=stride, bias=False)
 
 
@@ -232,6 +233,8 @@ def _resnet(arch, block, layers, pretrained, progress, **kwargs):
     resnet_w_bit = kwargs['w_bit']
     global resnet_a_bit
     resnet_a_bit = kwargs['a_bit']
+    global resnet_method
+    resnet_method = kwargs['method']
     model = ResNet(block, layers, **kwargs)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
