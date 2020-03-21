@@ -131,7 +131,7 @@ class QuantConv2d(nn.Conv2d):
             x = self.activation_quantizer(x, training=self.training)
             new_weight, _ = self.weight_quantizer(self.weight, training=self.training)
         else:
-            new_weight = self.weight.data
+            new_weight = self.weight
         y = nn.functional.conv2d(x, new_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return y
 
