@@ -64,7 +64,7 @@ def inference(epoch, net, dataloader, optimizer, device, is_train=False):
                     if len(m.record) > 0:
                         new_basis = torch.cat(m.record).mean(dim=0).view(m.num_filters, m.nbit)
                         new_basis = new_basis.to(m.basis.device)
-                        m.basis.data = m.basis.data * 0.1 + new_basis.data * 0.9
+                        m.basis.data = m.basis.data * 0.9 + new_basis.data * 0.1
                         m.record = []
         
         if step > 0 and step % disp_interval  == 0:
